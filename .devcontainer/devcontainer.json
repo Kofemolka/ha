@@ -2,7 +2,7 @@
   "name": "Home Assistant Dev",
   "context": "..",
   "dockerFile": "../Dockerfile.dev",
-  "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && script/setup && mkdir -p config/custom_components && ln -sfn /workspaces/ha/homeassistant/components/poc /workspaces/ha/config/custom_components/poc",
+  "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && script/setup && mkdir -p config/custom_components && ln -sfn /workspaces/ha/homeassistant/components/integra /workspaces/ha/config/custom_components/integra",
   "postStartCommand": "script/bootstrap",
   "containerEnv": {
     "PYTHONASYNCIODEBUG": "1"

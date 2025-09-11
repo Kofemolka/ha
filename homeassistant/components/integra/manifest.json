@@ -1,0 +1,10 @@
+{
+  "domain": "integra",
+  "name": "Satel Integra (Custom)",
+  "version": "0.1.0",
+  "config_flow": true,
+  "codeowners": ["@you"],
+  "iot_class": "local_polling",
+  "loggers": ["custom_components.integra"],
+  "requirements": []
+}
