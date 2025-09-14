@@ -14,8 +14,5 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_import(self, conf):
         unique = f"{conf[CONF_HOST]}:{conf[CONF_PORT]}"
         await self.async_set_unique_id(unique)
-        self._abort_if_unique_id_configured()
-        return self.async_create_entry(
-            title=f"Integra {unique}",
-            data=conf,  # includes host/port/code/zones/partitions
-        )
+
+        return self.async_create_entry(title=f"Integra {unique}", data=conf)

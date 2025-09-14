@@ -8,14 +8,13 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.const import CONF_NAME
 
 from .const import (
     DOMAIN,
-    DATA_COORDINATOR,
     DATA_DEVICE_ID,
+    DATA_CLIENT,
     CONF_ZONES,
     CONF_ID,
     CONF_TYPE,
@@ -26,8 +25,9 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, add: AddEntitiesCallback
 ) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data[DATA_COORDINATOR]
+    client = data[DATA_CLIENT]
     device_id = data[DATA_DEVICE_ID]
+
     zones = entry.data.get(CONF_ZONES, [])
     if not zones:
         return
@@ -44,7 +44,7 @@ async def async_setup_entry(
         )
         ents.append(
             IntegraZoneBinarySensor(
-                coordinator=coordinator,
+                client=client,
                 entry_id=entry.entry_id,
                 device_identifier=(DOMAIN, device_id),
                 zone_id=zid,
@@ -56,12 +56,12 @@ async def async_setup_entry(
     add(ents)
 
 
-class IntegraZoneBinarySensor(CoordinatorEntity, BinarySensorEntity):
+class IntegraZoneBinarySensor(BinarySensorEntity):
     _attr_should_poll = False
 
     def __init__(
         self,
-        coordinator,
+        client,
         entry_id: str,
         device_identifier,
         zone_id: int,
@@ -69,7 +69,7 @@ class IntegraZoneBinarySensor(CoordinatorEntity, BinarySensorEntity):
         device_class: BinarySensorDeviceClass,
         zone_type: str,
     ) -> None:
-        super().__init__(coordinator)
+        self._client = client
         self._entry_id = entry_id
         self._device_identifier = device_identifier
         self._zone_id = zone_id
@@ -77,11 +77,25 @@ class IntegraZoneBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._attr_unique_id = f"{entry_id}-zone-{zone_id}"
         self._attr_device_class = device_class
         self._zone_type = zone_type
+        self._unsub = None
+        self._is_on = self._client.get_zone_state(self._zone_id)
+
+    async def async_added_to_hass(self) -> None:
+        # subscribe specifically to this zone_id; callback receives NEW state (bool)
+        self._unsub = self._client.add_zone_listener(self._zone_id, self._on_zone_state)
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._unsub:
+            self._unsub()
+            self._unsub = None
 
     @property
     def is_on(self) -> bool:
-        d = self.coordinator.data or {}
-        return bool((d.get("zones") or {}).get(self._zone_id, False))
+        return self._is_on
+
+    @property
+    def available(self) -> bool:
+        return True  # TODO
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -90,3 +104,8 @@ class IntegraZoneBinarySensor(CoordinatorEntity, BinarySensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {"zone_id": self._zone_id, "zone_type": self._zone_type}
+
+    def _on_zone_state(self, new_state: bool) -> None:
+        if new_state != self._is_on:
+            self._is_on = new_state
+            self.async_write_ha_state()

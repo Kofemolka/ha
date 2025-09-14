@@ -7,13 +7,11 @@ from homeassistant.components.alarm_control_panel import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.const import CONF_NAME
 
 from .const import (
     DOMAIN,
-    DATA_COORDINATOR,
     DATA_DEVICE_ID,
     DATA_CLIENT,
     CONF_PARTITIONS,
@@ -31,7 +29,6 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, add: AddEntitiesCallback
 ) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data[DATA_COORDINATOR]
     device_id = data[DATA_DEVICE_ID]
     client = data[DATA_CLIENT]
     parts = entry.data.get(CONF_PARTITIONS, [])
@@ -40,7 +37,6 @@ async def async_setup_entry(
 
     entities = [
         IntegraPartitionPanel(
-            coordinator=coordinator,
             client=client,
             entry_id=entry.entry_id,
             device_identifier=(DOMAIN, device_id),
@@ -52,35 +48,42 @@ async def async_setup_entry(
     add(entities)
 
 
-class IntegraPartitionPanel(CoordinatorEntity, AlarmControlPanelEntity):
+class IntegraPartitionPanel(AlarmControlPanelEntity):
     _attr_should_poll = False
-    _attr_supported_features = (
-        AlarmControlPanelEntityFeature.ARM_HOME
-        | AlarmControlPanelEntityFeature.ARM_AWAY
-    )
+    _attr_supported_features = AlarmControlPanelEntityFeature.ARM_AWAY
+    _attr_code_arm_required = False
 
     def __init__(
         self,
-        coordinator,
         client,
         entry_id: str,
         device_identifier,
         part_id: int,
         name: str,
     ) -> None:
-        super().__init__(coordinator)
         self._client = client
         self._entry_id = entry_id
         self._device_identifier = device_identifier
         self._part_id = part_id
         self._attr_name = name
         self._attr_unique_id = f"{entry_id}-partition-{part_id}"
+        self._state = client.get_partition_state(part_id)
+        self._unsub = None
+
+    async def async_added_to_hass(self) -> None:
+        # subscribe specifically to this part_id; callback receives NEW state (str)
+        self._unsub = self._client.add_partition_listener(
+            self._part_id, self._on_partition_state
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._unsub:
+            self._unsub()
+            self._unsub = None
 
     @property
     def state(self) -> str | None:
-        d = self.coordinator.data or {}
-        raw = (d.get("partitions") or {}).get(self._part_id)
-        return STATE_MAP.get(raw, "unknown")
+        return self._state
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -88,12 +91,11 @@ class IntegraPartitionPanel(CoordinatorEntity, AlarmControlPanelEntity):
 
     async def async_alarm_disarm(self, code: str | None = None) -> None:
         await self._client.async_disarm(self._part_id)
-        await self.coordinator.async_request_refresh()
-
-    async def async_alarm_arm_home(self, code: str | None = None) -> None:
-        await self._client.async_arm(self._part_id, "home")
-        await self.coordinator.async_request_refresh()
 
     async def async_alarm_arm_away(self, code: str | None = None) -> None:
-        await self._client.async_arm(self._part_id, "away")
-        await self.coordinator.async_request_refresh()
+        await self._client.async_arm(self._part_id)
+
+    def _on_partition_state(self, new_state: bool) -> None:
+        if new_state != self._state:
+            self._state = new_state
+            self.async_write_ha_state()

@@ -1,34 +1,134 @@
 from __future__ import annotations
+import asyncio
 
-from typing import Any
+from collections import defaultdict, abc
+
+from homeassistant.core import HomeAssistant
+from homeassistant.components.alarm_control_panel import AlarmControlPanelState
+
+from satel_integra.satel_integra import AsyncSatel, AlarmState
+
+
+ZoneListener = abc.Callable[[bool], None]
+PartitionListener = abc.Callable[[str], None]
 
 
 class IntegraClient:
-    def __init__(self, host: str, port: int, code: str) -> None:
-        self._host, self._port, self._code = host, port, code
-        self._connected = False
+    def __init__(self, hass: HomeAssistant, host, port, code) -> None:
+        self._hass = hass
 
-    async def async_connect(self) -> None:
-        self._connected = True
+        self._stl = AsyncSatel(host, port, hass.loop)
+        self._security_code = code
 
-    async def async_close(self) -> None:
-        self._connected = False
+        self._zone_listeners: dict[int, set[ZoneListener]] = defaultdict(set)
+        self._partition_listeners: dict[int, set[PartitionListener]] = defaultdict(set)
 
-    async def async_get_states(
-        self, zones: list[int], partitions: list[int]
-    ) -> dict[str, Any]:
-        # TODO: replace with real TCP protocol.
-        return {
-            "zones": {z: False for z in zones},  # False=closed / not triggered
-            "partitions": {
-                p: "disarmed" for p in partitions
-            },  # "disarmed"|"armed_home"|"armed_away"
-        }
+        self._zones: dict[int, bool] = {}
 
-    async def async_arm(self, partition_id: int, mode: str) -> None:
-        # TODO: send arm command
-        return
+        self._lock = asyncio.Lock()
+        self._tasks: list[asyncio.Task] = []
+
+    async def async_start(self) -> None:
+        async with self._lock:
+            await self._stl.connect()
+
+            self._tasks.append(self._hass.loop.create_task(self._stl.keep_alive()))
+            self._tasks.append(
+                self._hass.loop.create_task(
+                    self._stl.monitor_status(
+                        zone_changed_callback=self._zone_status_changed,
+                        alarm_status_callback=self._alarm_status_changed,
+                    )
+                )
+            )
+
+    async def async_stop(self) -> None:
+        async with self._lock:
+            self._stl.close()
+
+            for t in self._tasks:
+                t.cancel()
+            self._tasks.clear()
+
+    async def async_arm(self, partition_id: int) -> None:
+        await self._stl.arm(self._security_code, [partition_id])
 
     async def async_disarm(self, partition_id: int) -> None:
-        # TODO: send disarm command
-        return
+        await self._stl.disarm(self._security_code, [partition_id])
+
+    async def async_clear_alarm(self, partition_id: int) -> None:
+        await self._stl.clear_alarm(self._security_code, [partition_id])
+
+    def get_zone_state(self, zone_id: int) -> bool:
+        return zone_id in self._stl.violated_zones
+
+    def add_zone_listener(self, zone_id: int, cb: ZoneListener):
+        zone_id = int(zone_id)
+        self._zone_listeners[zone_id].add(cb)
+        # seed initial state to subscriber
+        self._hass.loop.call_soon(cb, self.get_zone_state(zone_id))
+
+        def _unsub() -> None:
+            s = self._zone_listeners.get(zone_id)
+            if s:
+                s.discard(cb)
+                if not s:
+                    self._zone_listeners.pop(zone_id, None)
+
+        return _unsub
+
+    def get_partition_state(self, partition_id: int) -> AlarmControlPanelState:
+        state_map = {
+            AlarmState.TRIGGERED: AlarmControlPanelState.TRIGGERED,
+            AlarmState.TRIGGERED_FIRE: AlarmControlPanelState.TRIGGERED,
+            AlarmState.ENTRY_TIME: AlarmControlPanelState.DISARMING,
+            AlarmState.ARMED_MODE3: AlarmControlPanelState.ARMED_AWAY,
+            AlarmState.ARMED_MODE2: AlarmControlPanelState.ARMED_AWAY,
+            AlarmState.ARMED_MODE1: AlarmControlPanelState.ARMED_AWAY,
+            AlarmState.ARMED_MODE0: AlarmControlPanelState.ARMED_AWAY,
+            AlarmState.EXIT_COUNTDOWN_OVER_10: AlarmControlPanelState.PENDING,
+            AlarmState.EXIT_COUNTDOWN_UNDER_10: AlarmControlPanelState.PENDING,
+        }
+
+        partition_state = AlarmControlPanelState.DISARMED
+
+        for satel_state, ha_state in state_map.items():
+            if (
+                satel_state in self._stl.partition_states
+                and partition_id in self._stl.partition_states[satel_state]
+            ):
+                partition_state = ha_state
+                break
+
+        return partition_state
+
+    def add_partition_listener(self, partition_id: int, cb: PartitionListener):
+        partition_id = int(partition_id)
+        self._partition_listeners[partition_id].add(cb)
+        # seed initial state to subscriber
+        self._hass.loop.call_soon(cb, self.get_partition_state(partition_id))
+
+        def _unsub() -> None:
+            s = self._partition_listeners.get(partition_id)
+            if s:
+                s.discard(cb)
+                if not s:
+                    self._partition_listeners.pop(partition_id, None)
+
+        return _unsub
+
+    def _zone_status_changed(self, status):
+        all_ids = set(self._zones.keys()).union(self._stl.violated_zones or [])
+        for zid in all_ids:
+            new = zid in self._stl.violated_zones
+            old = self._zones.get(zid, False)
+            if new != old:
+                self._zones[zid] = new
+                for cb in tuple(self._zone_listeners.get(zid, ())):
+                    cb(new)
+
+    def _alarm_status_changed(self):
+        for pid, callbacks in list(self._partition_listeners.items()):
+            state = self.get_partition_state(int(pid))
+            for cb in tuple(callbacks):
+                cb(state)

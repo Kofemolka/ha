@@ -10,8 +10,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
 
 from .client import IntegraClient
 from .const import (
@@ -21,7 +22,6 @@ from .const import (
     CONF_TYPE,
     CONF_ZONES,
     DATA_CLIENT,
-    DATA_COORDINATOR,
     DATA_DEVICE_ID,
     DOMAIN,
     PLATFORMS,
@@ -113,30 +113,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         sw_version="n/a",
     )
 
-    client = IntegraClient(host, port, code)
+    client = IntegraClient(hass, host, port, code)
+    await client.async_start()
 
-    async def _async_update():
-        zones = [int(z[CONF_ID]) for z in entry.data.get(CONF_ZONES, [])]
-        parts = [int(p[CONF_ID]) for p in entry.data.get(CONF_PARTITIONS, [])]
-        try:
-            return await client.async_get_states(zones, parts)
-        except Exception as exc:
-            raise UpdateFailed(str(exc)) from exc
-
-    coordinator = DataUpdateCoordinator(
-        hass,
-        logger=_LOGGER,
-        name=f"{DOMAIN}_coordinator",
-        update_method=_async_update,
-        update_interval=timedelta(seconds=2),
-    )
-
-    await client.async_connect()
-    await coordinator.async_config_entry_first_refresh()
+    # prune stale zone entities
+    reg = er.async_get(hass)
+    keep_ids = {
+        f"{entry.entry_id}-zone-{int(z[CONF_ID])}"
+        for z in entry.data.get(CONF_ZONES, [])
+    }
+    for e in list(reg.entities.values()):
+        if e.config_entry_id == entry.entry_id and e.unique_id.startswith(
+            f"{entry.entry_id}-zone-"
+        ):
+            if e.unique_id not in keep_ids:
+                reg.async_remove(e.entity_id)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         DATA_CLIENT: client,
-        DATA_COORDINATOR: coordinator,
         DATA_DEVICE_ID: device_id,
     }
 
@@ -149,7 +143,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     if data and DATA_CLIENT in data:
         try:
-            await data[DATA_CLIENT].async_close()
+            await data[DATA_CLIENT].async_stop()
         except Exception:
             pass
     return ok
