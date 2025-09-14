@@ -95,6 +95,9 @@ class IntegraPartitionPanel(AlarmControlPanelEntity):
     async def async_alarm_arm_away(self, code: str | None = None) -> None:
         await self._client.async_arm(self._part_id)
 
+    async def async_clear_alarm(self) -> None:
+        await self._client.async_clear_alarm(self._part_id)
+
     def _on_partition_state(self, new_state: bool) -> None:
         if new_state != self._state:
             self._state = new_state
