@@ -1,0 +1,85 @@
+integra:
+  host: 192.168.0.5
+  port: 7094
+  code: 2049
+
+  zones:
+    - id: 30
+      name: "kofe office window"
+      type: opening
+
+    - id: 33
+      name: "Masha office window"
+      type: opening
+
+    - id: 27
+      name: "Bath 2nd window"
+      type: opening
+
+    - id: 36
+      name: "Small room window"
+      type: opening
+
+    - id: 25
+      name: "Wardrobe motion"
+      type: motion
+
+    - id: 24
+      name: "Wardrobe window"
+      type: opening
+
+    - id: 22
+      name: "Bath 1st motion"
+      type: motion
+
+    - id: 20
+      name: "Bath 1st window"
+      type: opening
+
+    - id: 18
+      name: "Master bedroom motion"
+      type: motion
+
+    - id: 17
+      name: "Master bedroom window"
+      type: opening
+
+    - id: 15
+      name: "Kitchen motion"
+      type: motion
+
+    - id: 13
+      name: "Kitchen window"
+      type: opening
+
+    - id: 10
+      name: "Backdoor"
+      type: opening
+
+    - id: 23
+      name: "Entrance motion"
+      type: motion
+
+    - id: 50
+      name: "Main door"
+      type: opening
+
+    - id: 4
+      name: "Garage motion"
+      type: motion
+
+    - id: 1
+      name: "Garage door"
+      type: opening
+
+    - id: 8
+      name: "Basement motion"
+      type: motion
+
+    - id: 5
+      name: "Basement door"
+      type: opening
+
+  partitions:
+   - id: 1
+     name: "Full guard"
