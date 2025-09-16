@@ -59,14 +59,16 @@ class IntegraClient:
     async def async_clear_alarm(self, partition_id: int) -> None:
         await self._stl.clear_alarm(self._security_code, [partition_id])
 
+    @property
+    def connected(self):
+        return self._stl.connected
+
     def get_zone_state(self, zone_id: int) -> bool:
         return zone_id in self._stl.violated_zones
 
     def add_zone_listener(self, zone_id: int, cb: ZoneListener):
         zone_id = int(zone_id)
         self._zone_listeners[zone_id].add(cb)
-        # seed initial state to subscriber
-        self._hass.loop.call_soon(cb, self.get_zone_state(zone_id))
 
         def _unsub() -> None:
             s = self._zone_listeners.get(zone_id)
@@ -105,8 +107,6 @@ class IntegraClient:
     def add_partition_listener(self, partition_id: int, cb: PartitionListener):
         partition_id = int(partition_id)
         self._partition_listeners[partition_id].add(cb)
-        # seed initial state to subscriber
-        self._hass.loop.call_soon(cb, self.get_partition_state(partition_id))
 
         def _unsub() -> None:
             s = self._partition_listeners.get(partition_id)

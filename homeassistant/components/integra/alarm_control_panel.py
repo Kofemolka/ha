@@ -67,7 +67,7 @@ class IntegraPartitionPanel(AlarmControlPanelEntity):
         self._part_id = part_id
         self._attr_name = name
         self._attr_unique_id = f"{entry_id}-partition-{part_id}"
-        self._state = client.get_partition_state(part_id)
+        self._state: bool | None = None
         self._unsub = None
 
     async def async_added_to_hass(self) -> None:
@@ -84,6 +84,10 @@ class IntegraPartitionPanel(AlarmControlPanelEntity):
     @property
     def state(self) -> str | None:
         return self._state
+
+    @property
+    def available(self) -> bool:
+        return self._state is not None
 
     @property
     def device_info(self) -> DeviceInfo:

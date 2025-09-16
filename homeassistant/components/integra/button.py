@@ -61,6 +61,10 @@ class IntegraClearAlarmButton(ButtonEntity):
     def device_info(self) -> DeviceInfo:
         return DeviceInfo(identifiers={self._device_identifier})
 
+    @property
+    def available(self) -> bool:
+        return self._client.connected
+
     async def async_press(self) -> None:
         """Called when the user clicks the button."""
         await self._client.async_clear_alarm(self._part_id)
