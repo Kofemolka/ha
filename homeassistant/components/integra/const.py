@@ -1,7 +1,11 @@
 from homeassistant.const import Platform
 
 DOMAIN = "integra"
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.ALARM_CONTROL_PANEL]
+PLATFORMS: list[Platform] = [
+    Platform.ALARM_CONTROL_PANEL,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+]
 
 CONF_CODE = "code"
 CONF_ZONES = "zones"
