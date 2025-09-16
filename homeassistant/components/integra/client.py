@@ -118,14 +118,10 @@ class IntegraClient:
         return _unsub
 
     def _zone_status_changed(self, status):
-        all_ids = set(self._zones.keys()).union(self._stl.violated_zones or [])
-        for zid in all_ids:
-            new = zid in self._stl.violated_zones
-            old = self._zones.get(zid, False)
-            if new != old:
-                self._zones[zid] = new
-                for cb in tuple(self._zone_listeners.get(zid, ())):
-                    cb(new)
+        for zone_id, callbacks in list(self._zone_listeners.items()):
+            state = self.get_zone_state(zone_id)
+            for cb in tuple(callbacks):
+                cb(state)
 
     def _alarm_status_changed(self):
         for pid, callbacks in list(self._partition_listeners.items()):

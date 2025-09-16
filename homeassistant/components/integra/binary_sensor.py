@@ -78,7 +78,7 @@ class IntegraZoneBinarySensor(BinarySensorEntity):
         self._attr_device_class = device_class
         self._zone_type = zone_type
         self._unsub = None
-        self._is_on = self._client.get_zone_state(self._zone_id)
+        self._is_on: bool | None = None
 
     async def async_added_to_hass(self) -> None:
         # subscribe specifically to this zone_id; callback receives NEW state (bool)
@@ -91,11 +91,11 @@ class IntegraZoneBinarySensor(BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        return self._is_on
+        return bool(self._is_on)
 
     @property
     def available(self) -> bool:
-        return True  # TODO
+        return self._is_on is not None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -106,6 +106,6 @@ class IntegraZoneBinarySensor(BinarySensorEntity):
         return {"zone_id": self._zone_id, "zone_type": self._zone_type}
 
     def _on_zone_state(self, new_state: bool) -> None:
-        if new_state != self._is_on:
+        if self._is_on is None or new_state != self._is_on:
             self._is_on = new_state
             self.async_write_ha_state()
